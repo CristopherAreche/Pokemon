@@ -1,0 +1,60 @@
+import { NextResponse } from 'next/server';
+import axios from 'axios';
+import { supabaseAdmin } from '@/lib/supabase';
+
+const getTypes = async () => {
+  try {
+    const apiUrl = "https://pokeapi.co/api/v2/type";
+    const response = await axios.get(apiUrl);
+    const types = response.data.results.map((type: any) => type.name);
+    return types;
+  } catch (error: any) {
+    throw new Error("Error to obtain pokemon types from api.");
+  }
+};
+
+export async function GET() {
+  try {
+    // First check if we have types in database
+    const { data: typesFromDb, error: fetchError } = await supabaseAdmin
+      .from('types')
+      .select('*');
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (typesFromDb && typesFromDb.length > 0) {
+      const typeNames = typesFromDb.map((type: any) => type.name);
+      return NextResponse.json(typeNames);
+    }
+
+    // If no types in database, fetch from API and store
+    console.log('No types found, fetching from API...');
+    const typesFromAPI = await getTypes();
+    
+    if (typesFromAPI && typesFromAPI.length > 0) {
+      // Insert types into database
+      const typeObjects = typesFromAPI.map((typeName: string) => ({ name: typeName }));
+      
+      const { data: insertedTypes, error: insertError } = await supabaseAdmin
+        .from('types')
+        .insert(typeObjects)
+        .select();
+
+      if (insertError) {
+        console.error('Error inserting types:', insertError);
+        // Return API data even if insert fails
+        return NextResponse.json(typesFromAPI);
+      }
+
+      const typeNames = insertedTypes.map((type: any) => type.name);
+      return NextResponse.json(typeNames);
+    } else {
+      return NextResponse.json([]);
+    }
+  } catch (error: any) {
+    console.error('Error in GET /api/types:', error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}
