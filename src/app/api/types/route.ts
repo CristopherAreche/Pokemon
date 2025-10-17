@@ -2,13 +2,26 @@ import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { supabaseAdmin } from '@/lib/supabase';
 
+interface TypeApiResponse {
+  name: string;
+  url: string;
+}
+
+interface TypesApiData {
+  results: TypeApiResponse[];
+}
+
+interface DatabaseType {
+  name: string;
+}
+
 const getTypes = async () => {
   try {
     const apiUrl = "https://pokeapi.co/api/v2/type";
-    const response = await axios.get(apiUrl);
-    const types = response.data.results.map((type: any) => type.name);
+    const response = await axios.get<TypesApiData>(apiUrl);
+    const types = response.data.results.map((type) => type.name);
     return types;
-  } catch (error: any) {
+  } catch {
     throw new Error("Error to obtain pokemon types from api.");
   }
 };
@@ -25,7 +38,7 @@ export async function GET() {
     }
 
     if (typesFromDb && typesFromDb.length > 0) {
-      const typeNames = typesFromDb.map((type: any) => type.name);
+      const typeNames = typesFromDb.map((type: DatabaseType) => type.name);
       return NextResponse.json(typeNames);
     }
 
@@ -48,12 +61,12 @@ export async function GET() {
         return NextResponse.json(typesFromAPI);
       }
 
-      const typeNames = insertedTypes.map((type: any) => type.name);
+      const typeNames = insertedTypes.map((type: DatabaseType) => type.name);
       return NextResponse.json(typeNames);
     } else {
       return NextResponse.json([]);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in GET /api/types:', error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
