@@ -15,14 +15,34 @@ interface PokemonData {
   type: string[];
 }
 
+interface PokemonSprites {
+  front_default?: string;
+  other?: {
+    'official-artwork'?: {
+      front_default?: string;
+    };
+    home?: {
+      front_default?: string;
+    };
+    dream_world?: {
+      front_default?: string;
+    };
+  };
+}
+
 interface ApiPokemonResponse {
   id: number;
   name: string;
-  sprites: any;
+  sprites: PokemonSprites;
   stats: Array<{ base_stat: number }>;
   types: Array<{ type: { name: string } }>;
   height: number;
   weight: number;
+}
+
+interface ApiPokemonListItem {
+  name: string;
+  url: string;
 }
 
 const returnUrl = async (url: string): Promise<ApiPokemonResponse> => {
@@ -66,7 +86,7 @@ export async function GET(request: NextRequest) {
     // If no Pokemon in database, fetch from API
     console.log('No Pokemon found, fetching from API...');
     const apiData = await getPokemonsFromApi();
-    const apiPokemons = apiData.data.results.map((pokemon: any) => ({
+    const apiPokemons = apiData.data.results.map((pokemon: ApiPokemonListItem) => ({
       name: pokemon?.name ?? "Unknown",
       url: pokemon.url,
     }));
@@ -80,16 +100,16 @@ export async function GET(request: NextRequest) {
       console.log(`Fetching Pokemon batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(apiPokemons.length / batchSize)}`);
       
       const batchResults = await Promise.all(
-        batch.map(async (pokemon: any) => {
+        batch.map(async (pokemon: ApiPokemonListItem) => {
           try {
             const urlInfo = await returnUrl(pokemon.url);
             const pokemonData: PokemonData = {
               pokemonId: urlInfo.id,
               name: pokemon.name,
-              image: (urlInfo.sprites as any)?.other?.['official-artwork']?.front_default || 
-                     (urlInfo.sprites as any)?.other?.home?.front_default || 
+              image: urlInfo.sprites?.other?.['official-artwork']?.front_default || 
+                     urlInfo.sprites?.other?.home?.front_default || 
                      urlInfo.sprites?.other?.dream_world?.front_default || 
-                     (urlInfo.sprites as any)?.front_default ||
+                     urlInfo.sprites?.front_default ||
                      `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${urlInfo.id}.png`,
               hp: urlInfo.stats[0]?.base_stat || 0,
               attack: urlInfo.stats[1]?.base_stat || 0,
@@ -97,7 +117,7 @@ export async function GET(request: NextRequest) {
               speed: urlInfo.stats[5]?.base_stat || 0,
               height: urlInfo.height || 0,
               weight: urlInfo.weight || 0,
-              type: urlInfo.types.map((t: any) => t.type.name),
+              type: urlInfo.types.map((t) => t.type.name),
             };
             return pokemonData;
           } catch (error) {
@@ -134,9 +154,10 @@ export async function GET(request: NextRequest) {
 
     console.log(`Successfully inserted ${allInsertedPokemons.length} Pokemon into database`);
     return NextResponse.json(allInsertedPokemons.length > 0 ? allInsertedPokemons : validPokemons);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in GET /api/pokemons:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 
@@ -174,9 +195,10 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ message: "Pokemon created successfully", pokemon: data }, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating Pokemon:', error);
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    return NextResponse.json({ error: errorMessage }, { status: 400 });
   }
 }
 
@@ -206,8 +228,9 @@ export async function DELETE(request: NextRequest) {
     }
 
     return NextResponse.json({ message: 'Pokemon deleted successfully' }, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error deleting Pokemon:', error);
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    return NextResponse.json({ error: errorMessage }, { status: 400 });
   }
 }

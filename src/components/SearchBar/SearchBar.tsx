@@ -17,7 +17,7 @@ const SearchBar = ({ onSearch }: SearchBarProps) => {
     }, 300); // Wait 300ms after user stops typing
 
     return () => clearTimeout(debounceTimer);
-  }, [searchTerm]); // Remove onSearch from dependencies to prevent infinite loops
+  }, [searchTerm, onSearch]);
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(event.target.value);
