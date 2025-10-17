@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import Navbar from "@/components/Navbar/Navbar";
 import { background } from "@/assets/backgroundColorByType";
 import wallpaperImg from "@/images/wallpaper.jpg";
@@ -183,7 +184,7 @@ export default function CreatePage() {
     if (selectedFile) {
       try {
         imageData = await convertFileToBase64(selectedFile);
-      } catch (error) {
+      } catch {
         alert("Error processing image file.");
         return;
       }
@@ -217,11 +218,19 @@ export default function CreatePage() {
           router.push(`/detail/${createdPokemon.pokemonId}`);
         }, 3000);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error creating Pokemon:", error);
-      console.error("Error response:", error.response?.data);
+      
+      let errorMessage = "Failed to create Pokemon";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null && 'response' in error) {
+        const axiosError = error as { response?: { data?: { error?: string } } };
+        errorMessage = axiosError.response?.data?.error || "Failed to create Pokemon";
+      }
+      
       setShowLoadingModal(false);
-      alert(`Failed to create Pokemon: ${error.response?.data?.error || error.message}`);
+      alert(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -282,11 +291,13 @@ export default function CreatePage() {
                 />
                 {imagePreview && (
                   <div className="mt-4 flex justify-center">
-                    <div className="w-32 h-32 bg-white rounded-lg p-2 shadow-md">
-                      <img
+                    <div className="w-32 h-32 bg-white rounded-lg p-2 shadow-md relative">
+                      <Image
                         src={imagePreview}
                         alt="Preview"
-                        className="w-full h-full object-contain"
+                        fill
+                        className="object-contain"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                       />
                     </div>
                   </div>

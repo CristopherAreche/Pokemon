@@ -77,7 +77,7 @@ export default function DetailPage() {
           <div className="max-w-3xl mx-auto text-center">
             <div className="bg-white/20 backdrop-blur-sm rounded-lg p-8">
               <h1 className="text-3xl font-bold text-white mb-4">Pokemon Not Found</h1>
-              <p className="text-white mb-6">The Pokemon you're looking for doesn't exist.</p>
+              <p className="text-white mb-6">The Pokemon you&apos;re looking for doesn&apos;t exist.</p>
               <button
                 onClick={() => router.back()}
                 className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors"
