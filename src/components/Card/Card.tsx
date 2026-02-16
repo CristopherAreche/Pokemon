@@ -29,17 +29,20 @@ interface CardProps {
   image?: string;
   pokemonId?: number;
   type?: string[];
+  isCustom?: boolean;
   onDelete?: (pokemonId: number) => void;
 }
 
-const Card = ({ name, image, pokemonId, type, onDelete }: CardProps) => {
+const Card = ({ name, image, pokemonId, type, isCustom, onDelete }: CardProps) => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const primaryType = type && type.length > 0 ? type[0] : 'normal';
   const bgColor = backgroundImg[primaryType as keyof typeof backgroundImg] || backgroundImg.normal;
+  const adminKey = process.env.NEXT_PUBLIC_ADMIN_API_KEY;
   
-  // Check if this is a custom Pokemon (ID > 151)
-  const isCustomPokemon = pokemonId && pokemonId > 151;
+  // Check if this is a custom Pokemon
+  const isCustomPokemon =
+    typeof isCustom === "boolean" ? isCustom : Boolean(pokemonId && pokemonId > 151);
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -52,14 +55,32 @@ const Card = ({ name, image, pokemonId, type, onDelete }: CardProps) => {
     
     try {
       setIsDeleting(true);
-      await axios.delete(`/api/pokemons?id=${pokemonId}`);
+
+      if (!adminKey) {
+        throw new Error(
+          "Missing NEXT_PUBLIC_ADMIN_API_KEY. Configure it to delete Pokémon from the UI."
+        );
+      }
+
+      await axios.delete(`/api/pokemons?id=${pokemonId}`, {
+        headers: {
+          "x-admin-key": adminKey,
+        },
+      });
       setShowDeleteModal(false);
       if (onDelete) {
         onDelete(pokemonId);
       }
     } catch (error) {
       console.error('Error deleting Pokemon:', error);
-      alert('Failed to delete Pokemon');
+      if (axios.isAxiosError(error)) {
+        const message = error.response?.data?.error || "Failed to delete Pokemon";
+        alert(message);
+      } else if (error instanceof Error) {
+        alert(error.message);
+      } else {
+        alert("Failed to delete Pokemon");
+      }
     } finally {
       setIsDeleting(false);
     }

@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindScrollbarHide from "tailwind-scrollbar-hide";
 
 export default {
   content: [
@@ -7,11 +8,7 @@ export default {
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
-    extend: {
-      backgroundImage: {
-        wallpaper: "url('/images/wallpaper.jpg')",
-      },
-    },
+    extend: {},
   },
-  plugins: [require("tailwind-scrollbar-hide")],
+  plugins: [tailwindScrollbarHide],
 } satisfies Config;

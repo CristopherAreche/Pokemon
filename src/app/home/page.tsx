@@ -22,112 +22,95 @@ interface Pokemon {
   height?: number;
   weight?: number;
   type: string[];
+  is_custom?: boolean;
+}
+
+interface PokemonApiResponse {
+  data: Pokemon[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPrevPage: boolean;
+  };
 }
 
 export default function HomePage() {
   const [pokemons, setPokemons] = useState<Pokemon[]>([]);
-  const [filteredPokemons, setFilteredPokemons] = useState<Pokemon[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState("all");
   const pokemonsPerPage = 18;
 
+  const fetchPokemons = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await axios.get<PokemonApiResponse>("/api/pokemons", {
+        params: {
+          page: currentPage,
+          pageSize: pokemonsPerPage,
+          search: searchTerm || undefined,
+          type: selectedType !== "all" ? selectedType : undefined,
+          sort: "pokemonId_asc",
+        },
+      });
+
+      if (Array.isArray(response.data)) {
+        const fallbackPokemons = response.data as unknown as Pokemon[];
+        setPokemons(fallbackPokemons);
+        setTotalPages(
+          fallbackPokemons.length === 0
+            ? 0
+            : Math.ceil(fallbackPokemons.length / pokemonsPerPage)
+        );
+      } else {
+        const payload = response.data;
+        setPokemons(payload.data ?? []);
+        setTotalPages(payload.pagination?.totalPages ?? 0);
+
+        if (payload.pagination && payload.pagination.page !== currentPage) {
+          setCurrentPage(payload.pagination.page);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching pokemons:", error);
+      setError("Failed to load Pokémon. Please try again.");
+      setPokemons([]);
+      setTotalPages(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, pokemonsPerPage, searchTerm, selectedType]);
 
   useEffect(() => {
-    const fetchPokemons = async () => {
-      try {
-        setLoading(true);
-        const response = await axios.get("/api/pokemons");
-        console.log(`Loaded ${response.data.length} Pokemon from API`);
-        setPokemons(response.data);
-        setFilteredPokemons(response.data);
-      } catch (error) {
-        console.error("Error fetching pokemons:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchPokemons();
-  }, []);
-
-  // Search functionality - search locally in database results
-  const searchPokemons = useCallback((term: string) => {
-    if (!term.trim()) {
-      // If search term is empty, show all pokemons with type filter
-      let filtered = pokemons;
-      if (selectedType !== "all") {
-        filtered = filtered.filter((pokemon) =>
-          pokemon.type.includes(selectedType)
-        );
-      }
-      setFilteredPokemons(filtered);
-      return;
-    }
-
-    // Search locally in the loaded pokemon data
-    let filtered = pokemons.filter((pokemon) =>
-      pokemon.name.toLowerCase().includes(term.toLowerCase())
-    );
-
-    // Apply type filter to search results
-    if (selectedType !== "all") {
-      filtered = filtered.filter((pokemon) =>
-        pokemon.type.includes(selectedType)
-      );
-    }
-
-    setFilteredPokemons(filtered);
-  }, [pokemons, selectedType]);
-
-  // Handle type filtering
-  useEffect(() => {
-    if (!searchTerm) {
-      // If no search term, filter the original pokemons list
-      let filtered = pokemons;
-      if (selectedType !== "all") {
-        filtered = filtered.filter((pokemon) =>
-          pokemon.type.includes(selectedType)
-        );
-      }
-      setFilteredPokemons(filtered);
-    }
-  }, [selectedType, pokemons, searchTerm]);
-
-  // Pagination logic
-  const indexOfLastPokemon = currentPage * pokemonsPerPage;
-  const indexOfFirstPokemon = indexOfLastPokemon - pokemonsPerPage;
-  const currentPokemons = filteredPokemons.slice(indexOfFirstPokemon, indexOfLastPokemon);
-  const totalPages = Math.ceil(filteredPokemons.length / pokemonsPerPage);
-
-  // Debug pagination (comment out in production)
-  // console.log(`Pagination: Page ${currentPage}/${totalPages}, showing ${currentPokemons.length} of ${filteredPokemons.length} Pokemon`);
+  }, [fetchPokemons]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
-    // Scroll to top when page changes
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleSearch = useCallback((term: string) => {
     setSearchTerm(term);
-    searchPokemons(term);
-    setCurrentPage(1); // Reset to first page when searching
-  }, [searchPokemons]); // Add dependencies
+    setCurrentPage(1);
+  }, []);
 
   const handleTypeFilter = (type: string) => {
     setSelectedType(type);
-    setCurrentPage(1); // Reset to first page when type filter changes
+    setCurrentPage(1);
   };
 
-  const handlePokemonDelete = (deletedPokemonId: number) => {
-    // Remove the deleted Pokemon from the current lists without refreshing
-    setPokemons(prev => prev.filter(pokemon => pokemon.pokemonId !== deletedPokemonId));
-    setFilteredPokemons(prev => prev.filter(pokemon => pokemon.pokemonId !== deletedPokemonId));
-    
-    console.log(`Pokemon with ID ${deletedPokemonId} removed from current page`);
-  };
+  const handlePokemonDelete = useCallback(() => {
+    fetchPokemons();
+  }, [fetchPokemons]);
 
   if (loading) {
     return (
@@ -162,18 +145,32 @@ export default function HomePage() {
 
           {/* Pokemon Grid - Centered Content */}
           <div className="flex-1 flex flex-col justify-center">
-            {currentPokemons.length > 0 ? (
+            {error ? (
+              <div className="text-center py-12 flex-1 flex items-center justify-center">
+                <div className="bg-red-500/20 backdrop-blur-sm rounded-lg p-8 max-w-md mx-auto">
+                  <h3 className="text-white text-xl font-bold mb-4">Error</h3>
+                  <p className="text-white mb-4">{error}</p>
+                  <button
+                    onClick={fetchPokemons}
+                    className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              </div>
+            ) : pokemons.length > 0 ? (
               <>
                 {/* Pokemon Cards Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 justify-items-center mb-12">
-                  {currentPokemons.map((pokemon) => (
+                  {pokemons.map((pokemon) => (
                     <Card 
                       key={pokemon.pokemonId} 
                       name={pokemon.name}
                       image={pokemon.image}
                       pokemonId={pokemon.pokemonId}
                       type={pokemon.type}
-                      onDelete={() => handlePokemonDelete(pokemon.pokemonId)}
+                      isCustom={pokemon.is_custom}
+                      onDelete={handlePokemonDelete}
                     />
                   ))}
                 </div>
@@ -190,10 +187,10 @@ export default function HomePage() {
                 )}
               </>
             ) : (
-              <div className="text-center py-12 flex-1 flex items-center justify-center">
-                <div className="bg-white/20 backdrop-blur-sm rounded-lg p-8 max-w-md mx-auto">
-                  <h3 className="text-white text-xl font-bold mb-4">No Pokémon Found</h3>
-                  <p className="text-white">
+                <div className="text-center py-12 flex-1 flex items-center justify-center">
+                  <div className="bg-white/20 backdrop-blur-sm rounded-lg p-8 max-w-md mx-auto">
+                    <h3 className="text-white text-xl font-bold mb-4">No Pokémon Found</h3>
+                    <p className="text-white">
                     {searchTerm || selectedType !== "all"
                       ? "Try adjusting your search criteria."
                       : "No Pokémon available at the moment."}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { supabaseAdmin } from '@/lib/supabase';
+import { apiLogger } from '@/lib/logger';
 
 interface TypeApiResponse {
   name: string;
@@ -43,7 +44,7 @@ export async function GET() {
     }
 
     // If no types in database, fetch from API and store
-    console.log('No types found, fetching from API...');
+    apiLogger.info('types.seed_started');
     const typesFromAPI = await getTypes();
     
     if (typesFromAPI && typesFromAPI.length > 0) {
@@ -56,7 +57,7 @@ export async function GET() {
         .select();
 
       if (insertError) {
-        console.error('Error inserting types:', insertError);
+        apiLogger.warn('types.seed_insert_failed', { insertError });
         // Return API data even if insert fails
         return NextResponse.json(typesFromAPI);
       }
@@ -67,7 +68,7 @@ export async function GET() {
       return NextResponse.json([]);
     }
   } catch (error: unknown) {
-    console.error('Error in GET /api/types:', error);
+    apiLogger.error('types.get_failed', { route: '/api/types', error });
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

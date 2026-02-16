@@ -10,6 +10,7 @@ import axios from "axios";
 
 export default function CreatePage() {
   const router = useRouter();
+  const adminKey = process.env.NEXT_PUBLIC_ADMIN_API_KEY;
   const [formData, setFormData] = useState({
     name: "",
     image: "",
@@ -206,7 +207,17 @@ export default function CreatePage() {
       setShowLoadingModal(true);
       console.log("Sending Pokemon data:", { ...pokemonData, image: imageData ? "base64 image data" : "no image" });
 
-      const response = await axios.post("/api/pokemons", pokemonData);
+      if (!adminKey) {
+        throw new Error(
+          "Missing NEXT_PUBLIC_ADMIN_API_KEY. Configure it to create Pokémon from the UI."
+        );
+      }
+
+      const response = await axios.post("/api/pokemons", pokemonData, {
+        headers: {
+          "x-admin-key": adminKey,
+        },
+      });
       
       if (response.status === 201) {
         const createdPokemon = response.data.pokemon;
