@@ -1,0 +1,69 @@
+name: Supabase Keepalive
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ping Supabase REST endpoint with retries
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${SUPABASE_URL:-}" || -z "${SUPABASE_ANON_KEY:-}" ]]; then
+            echo "Missing required GitHub Actions secrets: SUPABASE_URL and/or SUPABASE_ANON_KEY."
+            exit 1
+          fi
+
+          echo "::add-mask::${SUPABASE_URL}"
+          echo "::add-mask::${SUPABASE_ANON_KEY}"
+
+          endpoint="${SUPABASE_URL%/}/rest/v1/types?select=id&limit=1"
+          max_attempts=3
+
+          for attempt in $(seq 1 "${max_attempts}"); do
+            echo "Keepalive attempt ${attempt}/${max_attempts}..."
+
+            response_file="$(mktemp)"
+            http_code="$(curl --silent --show-error --location \
+              --max-time 20 \
+              --output "${response_file}" \
+              --write-out "%{http_code}" \
+              --header "apikey: ${SUPABASE_ANON_KEY}" \
+              --header "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+              --header "Accept: application/json" \
+              "${endpoint}" || true)"
+
+            if [[ "${http_code}" == "200" ]]; then
+              echo "Keepalive succeeded with HTTP 200."
+              rm -f "${response_file}"
+              exit 0
+            fi
+
+            echo "Keepalive failed with HTTP ${http_code}."
+            echo "Response body:"
+            cat "${response_file}" || true
+            rm -f "${response_file}"
+
+            if [[ "${attempt}" -lt "${max_attempts}" ]]; then
+              sleep_seconds=$((attempt * 15))
+              echo "Retrying in ${sleep_seconds}s..."
+              sleep "${sleep_seconds}"
+            fi
+          done
+
+          echo "Keepalive failed after ${max_attempts} attempts."
+          exit 1
+
