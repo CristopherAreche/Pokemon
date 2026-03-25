@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { apiLogger } from '@/lib/logger';
 
 export async function GET() {
@@ -46,4 +46,3 @@ export async function GET() {
     );
   }
 }
-

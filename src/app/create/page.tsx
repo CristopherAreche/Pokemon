@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useAdminSession } from "@/components/AdminSession/AdminSessionProvider";
 import Navbar from "@/components/Navbar/Navbar";
 import { background } from "@/assets/backgroundColorByType";
 import wallpaperImg from "@/images/wallpaper.jpg";
@@ -10,7 +11,7 @@ import axios from "axios";
 
 export default function CreatePage() {
   const router = useRouter();
-  const adminKey = process.env.NEXT_PUBLIC_ADMIN_API_KEY;
+  const { isAdmin, isCheckingSession, login, refreshSession } = useAdminSession();
   const [formData, setFormData] = useState({
     name: "",
     image: "",
@@ -27,6 +28,9 @@ export default function CreatePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
   const [nameError, setNameError] = useState("");
+  const [adminAccessKey, setAdminAccessKey] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [statErrors, setStatErrors] = useState({
     hp: "",
     attack: "",
@@ -41,15 +45,15 @@ export default function CreatePage() {
   ];
 
   const validateName = (name: string) => {
-    // Only letters and spaces allowed, max 40 characters
-    const nameRegex = /^[a-zA-Z\s]*$/;
+    // Only letters, spaces, and hyphens allowed, max 40 characters
+    const nameRegex = /^[a-zA-Z\s-]*$/;
     
     if (name.length > 40) {
       return "Name must be 40 characters or less";
     }
     
     if (!nameRegex.test(name)) {
-      return "Name can only contain letters and spaces";
+      return "Name can only contain letters, spaces, and hyphens";
     }
     
     if (name.trim().length === 0) {
@@ -72,8 +76,8 @@ export default function CreatePage() {
       return `${statName} cannot be negative`;
     }
     
-    if (numValue > 100) {
-      return `${statName} cannot exceed 100`;
+    if (numValue > 255) {
+      return `${statName} cannot exceed 255`;
     }
     
     return "";
@@ -205,19 +209,9 @@ export default function CreatePage() {
     try {
       setIsSubmitting(true);
       setShowLoadingModal(true);
-      console.log("Sending Pokemon data:", { ...pokemonData, image: imageData ? "base64 image data" : "no image" });
+      setAuthError("");
 
-      if (!adminKey) {
-        throw new Error(
-          "Missing NEXT_PUBLIC_ADMIN_API_KEY. Configure it to create Pokémon from the UI."
-        );
-      }
-
-      const response = await axios.post("/api/pokemons", pokemonData, {
-        headers: {
-          "x-admin-key": adminKey,
-        },
-      });
+      const response = await axios.post("/api/pokemons", pokemonData);
       
       if (response.status === 201) {
         const createdPokemon = response.data.pokemon;
@@ -236,14 +230,46 @@ export default function CreatePage() {
       if (error instanceof Error) {
         errorMessage = error.message;
       } else if (typeof error === 'object' && error !== null && 'response' in error) {
-        const axiosError = error as { response?: { data?: { error?: string } } };
+        const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
         errorMessage = axiosError.response?.data?.error || "Failed to create Pokemon";
+
+        if (axiosError.response?.status === 401) {
+          await refreshSession();
+          setAuthError("Your admin session expired. Sign in again to continue.");
+        }
       }
       
       setShowLoadingModal(false);
       alert(errorMessage);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleAdminSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!adminAccessKey.trim()) {
+      setAuthError("Admin key is required.");
+      return;
+    }
+
+    try {
+      setIsAuthenticating(true);
+      setAuthError("");
+      await login(adminAccessKey);
+      setAdminAccessKey("");
+    } catch (error: unknown) {
+      if (typeof error === "object" && error !== null && "response" in error) {
+        const axiosError = error as { response?: { data?: { error?: string } } };
+        setAuthError(axiosError.response?.data?.error || "Failed to start admin session.");
+      } else if (error instanceof Error) {
+        setAuthError(error.message);
+      } else {
+        setAuthError("Failed to start admin session.");
+      }
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
@@ -257,15 +283,69 @@ export default function CreatePage() {
       <div className="pt-24 px-4 pb-8 relative z-10">
         <div className="max-w-2xl mx-auto">
           <div className="bg-white/20 backdrop-blur-sm rounded-lg p-8 shadow-2xl">
-            <h1 className="text-3xl font-bold text-white text-center mb-8">
-              Create New Pokémon
-            </h1>
-            
-            <form onSubmit={handleSubmit} className="space-y-6">
+            {isCheckingSession ? (
+              <div className="py-12 text-center">
+                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-white mx-auto mb-6"></div>
+                <h1 className="text-3xl font-bold text-white mb-4">Checking Admin Session</h1>
+                <p className="text-gray-100">
+                  Please wait while we verify your access.
+                </p>
+              </div>
+            ) : !isAdmin ? (
+              <div className="max-w-md mx-auto">
+                <h1 className="text-3xl font-bold text-white text-center mb-4">
+                  Admin Access Required
+                </h1>
+                <p className="text-gray-100 text-center mb-8">
+                  Enter the server-side admin key to start a secure admin session. The key is validated by the server and never stored in public client configuration.
+                </p>
+
+                <form onSubmit={handleAdminSignIn} className="space-y-5">
+                  <div>
+                    <label className="block text-white font-semibold mb-2">
+                      Admin Key
+                    </label>
+                    <input
+                      type="password"
+                      value={adminAccessKey}
+                      onChange={(e) => setAdminAccessKey(e.target.value)}
+                      className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter admin key"
+                      autoComplete="current-password"
+                    />
+                  </div>
+
+                  {authError && (
+                    <p className="text-red-300 text-sm">{authError}</p>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isAuthenticating}
+                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-8 rounded-lg transition-colors"
+                  >
+                    {isAuthenticating ? "Starting Session..." : "Start Admin Session"}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <>
+                <h1 className="text-3xl font-bold text-white text-center mb-3">
+                  Create New Pokémon
+                </h1>
+                <p className="text-center text-gray-100 mb-8">
+                  Your admin session is active. Creation requests now use a secure `httpOnly` session cookie instead of a public client-side key.
+                </p>
+
+                {authError && (
+                  <p className="text-red-300 text-sm text-center mb-6">{authError}</p>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-6">
               {/* Name */}
               <div>
                 <label className="block text-white font-semibold mb-2">
-                  Name * (Letters and spaces only, max 40 characters)
+                  Name * (Letters, spaces, and hyphens only, max 40 characters)
                 </label>
                 <input
                   type="text"
@@ -318,7 +398,7 @@ export default function CreatePage() {
               {/* Stats Grid */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-white font-semibold mb-2">HP (Max: 100)</label>
+                  <label className="block text-white font-semibold mb-2">HP (Max: 255)</label>
                   <input
                     type="number"
                     name="hp"
@@ -330,14 +410,14 @@ export default function CreatePage() {
                         : "border-gray-300 focus:ring-blue-500"
                     }`}
                     min="0"
-                    max="100"
+                    max="255"
                   />
                   {statErrors.hp && (
                     <p className="text-red-300 text-sm mt-1">{statErrors.hp}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-white font-semibold mb-2">Attack (Max: 100)</label>
+                  <label className="block text-white font-semibold mb-2">Attack (Max: 255)</label>
                   <input
                     type="number"
                     name="attack"
@@ -349,14 +429,14 @@ export default function CreatePage() {
                         : "border-gray-300 focus:ring-blue-500"
                     }`}
                     min="0"
-                    max="100"
+                    max="255"
                   />
                   {statErrors.attack && (
                     <p className="text-red-300 text-sm mt-1">{statErrors.attack}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-white font-semibold mb-2">Defense (Max: 100)</label>
+                  <label className="block text-white font-semibold mb-2">Defense (Max: 255)</label>
                   <input
                     type="number"
                     name="defense"
@@ -368,14 +448,14 @@ export default function CreatePage() {
                         : "border-gray-300 focus:ring-blue-500"
                     }`}
                     min="0"
-                    max="100"
+                    max="255"
                   />
                   {statErrors.defense && (
                     <p className="text-red-300 text-sm mt-1">{statErrors.defense}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-white font-semibold mb-2">Speed (Max: 100)</label>
+                  <label className="block text-white font-semibold mb-2">Speed (Max: 255)</label>
                   <input
                     type="number"
                     name="speed"
@@ -387,7 +467,7 @@ export default function CreatePage() {
                         : "border-gray-300 focus:ring-blue-500"
                     }`}
                     min="0"
-                    max="100"
+                    max="255"
                   />
                   {statErrors.speed && (
                     <p className="text-red-300 text-sm mt-1">{statErrors.speed}</p>
@@ -459,7 +539,9 @@ export default function CreatePage() {
                   {isSubmitting ? "Creating..." : "Create Pokémon"}
                 </button>
               </div>
-            </form>
+                </form>
+              </>
+            )}
           </div>
         </div>
       </div>

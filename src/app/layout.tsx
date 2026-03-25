@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AuthProvider } from "@/components/Auth/AuthProvider";
+import { AdminSessionProvider } from "@/components/AdminSession/AdminSessionProvider";
+import { CompareProvider } from "@/components/Compare/CompareProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,7 +31,11 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
         suppressHydrationWarning={true}
       >
-        {children}
+        <AuthProvider>
+          <CompareProvider>
+            <AdminSessionProvider>{children}</AdminSessionProvider>
+          </CompareProvider>
+        </AuthProvider>
       </body>
     </html>
   );

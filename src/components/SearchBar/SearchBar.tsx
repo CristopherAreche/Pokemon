@@ -5,10 +5,15 @@ import { FaSearch } from "react-icons/fa";
 
 interface SearchBarProps {
   onSearch: (term: string) => void;
+  value?: string;
 }
 
-const SearchBar = ({ onSearch }: SearchBarProps) => {
-  const [searchTerm, setSearchTerm] = useState("");
+const SearchBar = ({ onSearch, value = "" }: SearchBarProps) => {
+  const [searchTerm, setSearchTerm] = useState(value);
+
+  useEffect(() => {
+    setSearchTerm(value);
+  }, [value]);
 
   // Live search with debouncing
   useEffect(() => {
@@ -40,6 +45,7 @@ const SearchBar = ({ onSearch }: SearchBarProps) => {
         <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
           {searchTerm && (
             <button
+              type="button"
               onClick={handleClear}
               className="text-gray-400 hover:text-gray-600 transition-colors"
             >

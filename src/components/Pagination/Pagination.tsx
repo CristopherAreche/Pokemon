@@ -7,9 +7,15 @@ interface PaginationProps {
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
+  disabled?: boolean;
 }
 
-const Pagination = ({ currentPage, totalPages, onPageChange }: PaginationProps) => {
+const Pagination = ({
+  currentPage,
+  totalPages,
+  onPageChange,
+  disabled = false,
+}: PaginationProps) => {
   const [input, setInput] = useState(currentPage || 1);
 
   useEffect(() => {
@@ -17,7 +23,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange }: PaginationProps) 
   }, [currentPage]);
 
   const nextPage = () => {
-    if (currentPage < totalPages) {
+    if (!disabled && currentPage < totalPages) {
       const newPage = currentPage + 1;
       setInput(newPage);
       onPageChange(newPage);
@@ -25,7 +31,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange }: PaginationProps) 
   };
 
   const prevPage = () => {
-    if (currentPage > 1) {
+    if (!disabled && currentPage > 1) {
       const newPage = currentPage - 1;
       setInput(newPage);
       onPageChange(newPage);
@@ -33,7 +39,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange }: PaginationProps) 
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (!disabled && e.key === 'Enter') {
       const target = e.target as HTMLInputElement;
       const value = parseInt(target.value);
       
@@ -54,6 +60,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange }: PaginationProps) 
   return (
     <div className="flex justify-center items-center gap-4">
       <button
+        type="button"
         disabled={currentPage <= 1}
         className="p-4 rounded-full bg-white/20 backdrop-blur-sm text-lg text-white disabled:opacity-50 hover:bg-white/30 transition-colors"
         onClick={prevPage}
@@ -68,13 +75,15 @@ const Pagination = ({ currentPage, totalPages, onPageChange }: PaginationProps) 
           name="page"
           autoComplete="off"
           value={input}
+          disabled={disabled}
         />
         <p className="bg-white/20 backdrop-blur-sm text-white text-lg pr-5 py-2 rounded-r-full outline-none border-none">
           <span className="mr-3 text-white">of</span> {totalPages}
         </p>
       </div>
       <button
-        disabled={currentPage >= totalPages}
+        type="button"
+        disabled={disabled || currentPage >= totalPages}
         className="p-4 rounded-full bg-white/20 backdrop-blur-sm text-lg text-white disabled:opacity-50 hover:bg-white/30 transition-colors"
         onClick={nextPage}
       >

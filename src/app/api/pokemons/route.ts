@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
-import { supabaseAdmin } from '@/lib/supabase';
-import { requireAdminKey } from '@/lib/adminAuth';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { requireAdminAccess, getRequestIdentifier } from '@/lib/adminAuth';
 import { consumeRateLimit } from '@/lib/rateLimiter';
 import { apiLogger } from '@/lib/logger';
 
@@ -77,12 +77,15 @@ interface ValidatedPokemonInput {
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 18;
 const MAX_PAGE_SIZE = 100;
+const OFFICIAL_POKEMON_LIMIT = 151;
 const REFRESH_RATE_LIMIT = 3;
 const REFRESH_RATE_WINDOW_MS = 60_000;
 const MAX_NAME_LENGTH = 40;
 const MAX_STAT_VALUE = 255;
 const MAX_SIZE_VALUE = 5000;
 const MAX_ID_GENERATION_ATTEMPTS = 7;
+const MAX_IMAGE_URL_LENGTH = 2048;
+const MAX_IMAGE_DATA_URL_LENGTH = 7_500_000;
 
 const ALLOWED_TYPES = new Set([
   'normal',
@@ -129,20 +132,6 @@ const isNoRowsError = (errorCode?: string) => errorCode === 'PGRST116';
 
 const isUniqueConstraintError = (errorCode?: string) => errorCode === '23505';
 
-const getRequestIdentifier = (request: NextRequest) => {
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0].trim();
-  }
-
-  const realIp = request.headers.get('x-real-ip');
-  if (realIp) {
-    return realIp.trim();
-  }
-
-  return 'unknown';
-};
-
 const parsePositiveInt = (value: string | null, fallback: number) => {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -181,7 +170,7 @@ const returnUrl = async (url: string): Promise<ApiPokemonResponse> => {
 
 const getPokemonsFromApi = async () => {
   const pokemonData = await axios.get<{ results: ApiPokemonListItem[] }>(
-    'https://pokeapi.co/api/v2/pokemon?limit=151'
+    `https://pokeapi.co/api/v2/pokemon?limit=${OFFICIAL_POKEMON_LIMIT}`
   );
   return pokemonData.data.results;
 };
@@ -199,17 +188,22 @@ const getPokemonCount = async () => {
 };
 
 const seedPokemons = async (forceRefresh: boolean) => {
-  if (forceRefresh) {
-    const { error: deleteError } = await supabaseAdmin
-      .from('pokemons')
-      .delete()
-      .neq('pokemonId', 0);
+  let preservedCustomCount = 0;
 
-    if (deleteError) {
-      throw deleteError;
+  if (forceRefresh) {
+    const { count, error: customCountError } = await supabaseAdmin
+      .from('pokemons')
+      .select('pokemonId', { count: 'exact', head: true })
+      .eq('is_custom', true);
+
+    if (customCountError) {
+      throw customCountError;
     }
 
-    apiLogger.info('pokemons.refresh_cleared');
+    preservedCustomCount = count ?? 0;
+    apiLogger.info('pokemons.refresh_preserving_custom', {
+      preservedCustomCount,
+    });
   }
 
   const apiPokemons = await getPokemonsFromApi();
@@ -238,6 +232,8 @@ const seedPokemons = async (forceRefresh: boolean) => {
             height: urlInfo.height ?? 0,
             weight: urlInfo.weight ?? 0,
             type: urlInfo.types.map((t) => t.type.name),
+            is_custom: false,
+            created_by: null,
           };
 
           return pokemonData;
@@ -274,7 +270,8 @@ const seedPokemons = async (forceRefresh: boolean) => {
 
   apiLogger.info('pokemons.seed_completed', {
     fetched: pokemonList.length,
-    inserted: insertedCount,
+    upserted: insertedCount,
+    preservedCustomCount,
   });
 };
 
@@ -358,6 +355,14 @@ const normalizeImage = (value: unknown): string | null => {
 
   if (!isHttpUrl && !isAllowedDataImage) {
     throw new ValidationError('Image must be a valid URL or PNG/SVG base64 data image.');
+  }
+
+  if (isHttpUrl && normalized.length > MAX_IMAGE_URL_LENGTH) {
+    throw new ValidationError(`Image URL must be at most ${MAX_IMAGE_URL_LENGTH} characters.`);
+  }
+
+  if (isAllowedDataImage && normalized.length > MAX_IMAGE_DATA_URL_LENGTH) {
+    throw new ValidationError('Image payload is too large.');
   }
 
   return normalized;
@@ -484,7 +489,11 @@ export async function GET(request: NextRequest) {
     const sort = parseSort(searchParams.get('sort'));
 
     if (forceRefresh) {
-      const authResponse = requireAdminKey(request);
+      const authResponse = requireAdminAccess(request, {
+        allowHeader: true,
+        allowSession: false,
+        enforceSameOriginForSession: false,
+      });
       if (authResponse) {
         return authResponse;
       }
@@ -538,7 +547,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const authResponse = requireAdminKey(request);
+    const authResponse = requireAdminAccess(request);
     if (authResponse) {
       return authResponse;
     }
@@ -639,7 +648,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const authResponse = requireAdminKey(request);
+    const authResponse = requireAdminAccess(request);
     if (authResponse) {
       return authResponse;
     }

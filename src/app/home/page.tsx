@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense } from "react";
+import axios from "axios";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/components/Auth/AuthProvider";
 import Navbar from "@/components/Navbar/Navbar";
 import Card from "@/components/Card/Card";
 import SearchBar from "@/components/SearchBar/SearchBar";
 import Filter from "@/components/Filter/Filter";
 import Pagination from "@/components/Pagination/Pagination";
 import Spinner from "@/components/Spinner/Spinner";
+import { useAdminSession } from "@/components/AdminSession/AdminSessionProvider";
 import wallpaperImg from "@/images/wallpaper.jpg";
-import axios from "axios";
 
 interface Pokemon {
   id?: number;
@@ -37,19 +41,90 @@ interface PokemonApiResponse {
   };
 }
 
-export default function HomePage() {
+const DEFAULT_PAGE = 1;
+const DEFAULT_TYPE = "all";
+
+const parsePositiveInt = (value: string | null, fallback: number) => {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const HomePageFallback = () => (
+  <div
+    className="min-h-screen bg-cover bg-center bg-no-repeat relative"
+    style={{ backgroundImage: `url(${wallpaperImg.src})` }}
+  >
+    <div className="absolute inset-0 bg-black/40"></div>
+    <Navbar />
+    <div className="pt-24 flex justify-center items-center h-screen relative z-10">
+      <Spinner />
+    </div>
+  </div>
+);
+
+function HomePageContent() {
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { isAdmin, isCheckingSession } = useAdminSession();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [pokemons, setPokemons] = useState<Pokemon[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(() =>
+    parsePositiveInt(searchParams.get("page"), DEFAULT_PAGE)
+  );
   const [totalPages, setTotalPages] = useState(0);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedType, setSelectedType] = useState("all");
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get("search")?.trim() ?? "");
+  const [selectedType, setSelectedType] = useState(
+    () => searchParams.get("type")?.trim() || DEFAULT_TYPE
+  );
+  const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
+  const latestRequestRef = useRef(0);
+  const latestFavoritesRequestRef = useRef(0);
+  const hasLoadedOnceRef = useRef(false);
   const pokemonsPerPage = 18;
 
+  const buildReturnTo = useCallback(() => {
+    const params = new URLSearchParams();
+
+    if (currentPage > DEFAULT_PAGE) {
+      params.set("page", String(currentPage));
+    }
+
+    if (searchTerm.trim()) {
+      params.set("search", searchTerm.trim());
+    }
+
+    if (selectedType !== DEFAULT_TYPE) {
+      params.set("type", selectedType);
+    }
+
+    return params.toString() ? `${pathname}?${params.toString()}` : pathname;
+  }, [currentPage, pathname, searchTerm, selectedType]);
+
+  useEffect(() => {
+    const nextUrl = buildReturnTo();
+    const currentUrl = searchParams.toString() ? `${pathname}?${searchParams.toString()}` : pathname;
+
+    if (nextUrl !== currentUrl) {
+      router.replace(nextUrl, { scroll: false });
+    }
+  }, [buildReturnTo, pathname, router, searchParams]);
+
   const fetchPokemons = useCallback(async () => {
+    const requestId = latestRequestRef.current + 1;
+    latestRequestRef.current = requestId;
+    const isInitialLoad = !hasLoadedOnceRef.current;
+
     try {
-      setLoading(true);
+      if (isInitialLoad) {
+        setLoading(true);
+      } else {
+        setIsFetching(true);
+      }
+
       setError(null);
 
       const response = await axios.get<PokemonApiResponse>("/api/pokemons", {
@@ -61,6 +136,10 @@ export default function HomePage() {
           sort: "pokemonId_asc",
         },
       });
+
+      if (requestId !== latestRequestRef.current) {
+        return;
+      }
 
       if (Array.isArray(response.data)) {
         const fallbackPokemons = response.data as unknown as Pokemon[];
@@ -79,19 +158,76 @@ export default function HomePage() {
           setCurrentPage(payload.pagination.page);
         }
       }
+
+      hasLoadedOnceRef.current = true;
     } catch (error) {
+      if (requestId !== latestRequestRef.current) {
+        return;
+      }
+
       console.error("Error fetching pokemons:", error);
       setError("Failed to load Pokémon. Please try again.");
-      setPokemons([]);
-      setTotalPages(0);
+
+      if (isInitialLoad) {
+        setPokemons([]);
+        setTotalPages(0);
+      }
     } finally {
+      if (requestId !== latestRequestRef.current) {
+        return;
+      }
+
       setLoading(false);
+      setIsFetching(false);
     }
   }, [currentPage, pokemonsPerPage, searchTerm, selectedType]);
 
   useEffect(() => {
     fetchPokemons();
   }, [fetchPokemons]);
+
+  const fetchFavoriteIds = useCallback(async () => {
+    if (!isAuthenticated) {
+      setFavoriteIds([]);
+      return;
+    }
+
+    const requestId = latestFavoritesRequestRef.current + 1;
+    latestFavoritesRequestRef.current = requestId;
+
+    try {
+      const response = await axios.get<{ favoriteIds: number[] }>("/api/favorites", {
+        params: {
+          idsOnly: true,
+        },
+      });
+
+      if (requestId !== latestFavoritesRequestRef.current) {
+        return;
+      }
+
+      setFavoriteIds(response.data.favoriteIds ?? []);
+    } catch (error) {
+      if (requestId !== latestFavoritesRequestRef.current) {
+        return;
+      }
+
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        setFavoriteIds([]);
+        return;
+      }
+
+      console.error("Error fetching favorite ids:", error);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthLoading) {
+      return;
+    }
+
+    void fetchFavoriteIds();
+  }, [fetchFavoriteIds, isAuthLoading]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -111,6 +247,20 @@ export default function HomePage() {
   const handlePokemonDelete = useCallback(() => {
     fetchPokemons();
   }, [fetchPokemons]);
+
+  const handleFavoriteToggle = useCallback((pokemonId: number, nextIsFavorite: boolean) => {
+    setFavoriteIds((currentFavoriteIds) => {
+      const nextFavoriteIds = new Set(currentFavoriteIds);
+
+      if (nextIsFavorite) {
+        nextFavoriteIds.add(pokemonId);
+      } else {
+        nextFavoriteIds.delete(pokemonId);
+      }
+
+      return [...nextFavoriteIds];
+    });
+  }, []);
 
   if (loading) {
     return (
@@ -138,13 +288,29 @@ export default function HomePage() {
         <div className="max-w-[1280px] mx-auto w-full flex-1 flex flex-col">
           {/* Search and Filter Section */}
           <div className="mb-12 mt-8 flex flex-col md:flex-row gap-4 justify-center items-center">
-            <SearchBar onSearch={handleSearch} />
+            <SearchBar onSearch={handleSearch} value={searchTerm} />
             <Filter onTypeFilter={handleTypeFilter} selectedType={selectedType} />
           </div>
 
+          {isFetching && (
+            <div className="mb-6 text-center">
+              <span className="inline-flex items-center rounded-full bg-white/20 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm">
+                Updating results...
+              </span>
+            </div>
+          )}
 
-          {/* Pokemon Grid - Centered Content */}
-          <div className="flex-1 flex flex-col justify-center">
+          {isAdmin && !isCheckingSession && (
+            <div className="mb-6 text-center">
+              <span className="inline-flex items-center rounded-full bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm">
+                Admin session active
+              </span>
+            </div>
+          )}
+
+
+          {/* Pokemon Grid */}
+          <div className="relative flex-1 flex flex-col">
             {error ? (
               <div className="text-center py-12 flex-1 flex items-center justify-center">
                 <div className="bg-red-500/20 backdrop-blur-sm rounded-lg p-8 max-w-md mx-auto">
@@ -161,8 +327,15 @@ export default function HomePage() {
             ) : pokemons.length > 0 ? (
               <>
                 {/* Pokemon Cards Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 justify-items-center mb-12">
-                  {pokemons.map((pokemon) => (
+                <div
+                  className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 justify-items-center content-start mb-12 transition-opacity ${
+                    isFetching ? "opacity-60" : "opacity-100"
+                  }`}
+                >
+                  {pokemons.map((pokemon) => {
+                    const returnTo = buildReturnTo();
+
+                    return (
                     <Card 
                       key={pokemon.pokemonId} 
                       name={pokemon.name}
@@ -170,9 +343,18 @@ export default function HomePage() {
                       pokemonId={pokemon.pokemonId}
                       type={pokemon.type}
                       isCustom={pokemon.is_custom}
+                      isFavorite={favoriteIds.includes(pokemon.pokemonId)}
+                      canDelete={isAdmin && !isCheckingSession}
+                      detailHref={
+                        pokemon.pokemonId
+                          ? `/detail/${pokemon.pokemonId}?from=${encodeURIComponent(returnTo)}`
+                          : "#"
+                      }
                       onDelete={handlePokemonDelete}
+                      onFavoriteToggle={handleFavoriteToggle}
                     />
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Pagination */}
@@ -182,6 +364,7 @@ export default function HomePage() {
                       currentPage={currentPage}
                       totalPages={totalPages}
                       onPageChange={handlePageChange}
+                      disabled={isFetching}
                     />
                   </div>
                 )}
@@ -202,5 +385,13 @@ export default function HomePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<HomePageFallback />}>
+      <HomePageContent />
+    </Suspense>
   );
 }

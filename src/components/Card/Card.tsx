@@ -5,6 +5,8 @@ import Image from "next/image";
 import { useState } from "react";
 import { FaTimes } from "react-icons/fa";
 import { background, backgroundImg } from "@/assets/backgroundColorByType";
+import CompareButton from "@/components/Compare/CompareButton";
+import FavoriteButton from "@/components/FavoriteButton/FavoriteButton";
 import noImg from "@/images/charmander.png";
 import axios from "axios";
 
@@ -30,19 +32,33 @@ interface CardProps {
   pokemonId?: number;
   type?: string[];
   isCustom?: boolean;
+  canDelete?: boolean;
+  isFavorite?: boolean;
+  detailHref?: string;
   onDelete?: (pokemonId: number) => void;
+  onFavoriteToggle?: (pokemonId: number, isFavorite: boolean) => void;
 }
 
-const Card = ({ name, image, pokemonId, type, isCustom, onDelete }: CardProps) => {
+const Card = ({
+  name,
+  image,
+  pokemonId,
+  type,
+  isCustom,
+  canDelete = false,
+  isFavorite,
+  detailHref,
+  onDelete,
+  onFavoriteToggle,
+}: CardProps) => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const primaryType = type && type.length > 0 ? type[0] : 'normal';
   const bgColor = backgroundImg[primaryType as keyof typeof backgroundImg] || backgroundImg.normal;
-  const adminKey = process.env.NEXT_PUBLIC_ADMIN_API_KEY;
   
   // Check if this is a custom Pokemon
   const isCustomPokemon =
-    typeof isCustom === "boolean" ? isCustom : Boolean(pokemonId && pokemonId > 151);
+    (typeof isCustom === "boolean" ? isCustom : Boolean(pokemonId && pokemonId > 151)) && canDelete;
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -56,15 +72,9 @@ const Card = ({ name, image, pokemonId, type, isCustom, onDelete }: CardProps) =
     try {
       setIsDeleting(true);
 
-      if (!adminKey) {
-        throw new Error(
-          "Missing NEXT_PUBLIC_ADMIN_API_KEY. Configure it to delete Pokémon from the UI."
-        );
-      }
-
-      await axios.delete(`/api/pokemons?id=${pokemonId}`, {
-        headers: {
-          "x-admin-key": adminKey,
+      await axios.delete("/api/pokemons", {
+        params: {
+          id: pokemonId,
         },
       });
       setShowDeleteModal(false);
@@ -93,19 +103,40 @@ const Card = ({ name, image, pokemonId, type, isCustom, onDelete }: CardProps) =
   return (
     <>
       <Link
-        href={pokemonId ? `/detail/${pokemonId}` : '#'}
+        href={pokemonId ? detailHref ?? `/detail/${pokemonId}` : '#'}
         className="block text-black no-underline"
       >
         <div className="w-52 h-80 rounded-xl bg-white shadow-md shadow-gray-900 hover:scale-105 transition-transform duration-200 mx-auto relative">
           {/* Delete button for custom Pokemon */}
           {isCustomPokemon && (
             <button
+              type="button"
               onClick={handleDelete}
               className="absolute top-2 right-2 z-10 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-colors"
               title="Delete Pokemon"
             >
               <FaTimes className="text-sm" />
             </button>
+          )}
+
+          {pokemonId && (
+            <div className="absolute left-2 top-2 z-10 flex items-center gap-2">
+              <FavoriteButton
+                pokemonId={pokemonId}
+                initialIsFavorite={isFavorite}
+                onToggle={(nextIsFavorite) => {
+                  onFavoriteToggle?.(pokemonId, nextIsFavorite);
+                }}
+              />
+              <CompareButton
+                pokemon={{
+                  pokemonId,
+                  name,
+                  image,
+                  type,
+                }}
+              />
+            </div>
           )}
           
           <div
@@ -146,6 +177,7 @@ const Card = ({ name, image, pokemonId, type, isCustom, onDelete }: CardProps) =
             </p>
             <div className="flex gap-3 justify-end">
               <button
+                type="button"
                 onClick={cancelDelete}
                 className="px-4 py-2 text-gray-600 bg-gray-200 rounded hover:bg-gray-300 transition-colors"
                 disabled={isDeleting}
@@ -153,6 +185,7 @@ const Card = ({ name, image, pokemonId, type, isCustom, onDelete }: CardProps) =
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={confirmDelete}
                 className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors disabled:opacity-50"
                 disabled={isDeleting}

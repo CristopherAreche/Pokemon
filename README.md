@@ -26,6 +26,7 @@ cp .env.example .env
 3. Completa `.env` con los valores del proyecto Supabase.
 
 4. Ejecuta `supabase-schema.sql` en el SQL Editor de tu proyecto Supabase.
+   Este script ahora también habilita RLS, ajusta privilegios mínimos, crea `profiles` y `favorites`, y añade un trigger para auto-habilitar RLS en futuras tablas creadas en `public`.
 
 5. Levanta el proyecto:
 
@@ -49,15 +50,12 @@ Requeridas:
 - `DATABASE_URL`
 - `DIRECT_URL`
 - `ADMIN_API_KEY`
-
-Opcional para usar creación/borrado desde el frontend en local:
-
-- `NEXT_PUBLIC_ADMIN_API_KEY`
+- `ADMIN_SESSION_SECRET`
 
 Nota:
 
-- `ADMIN_API_KEY` protege endpoints de escritura.
-- Si usas `NEXT_PUBLIC_ADMIN_API_KEY`, esa key queda expuesta al cliente. Es solo solución temporal para entorno local/admin.
+- `ADMIN_API_KEY` protege endpoints admin y permite iniciar sesión admin server-side.
+- `ADMIN_SESSION_SECRET` firma la cookie `httpOnly` de la sesión admin. Debe ser larga, aleatoria y distinta de otras llaves.
 - Si hubo exposición previa de llaves o password DB, debes rotarlas en Supabase.
 
 ## API
@@ -71,7 +69,7 @@ Parámetros:
 - `search` (nombre parcial)
 - `type` (tipo Pokémon)
 - `sort` (`pokemonId_asc`, `pokemonId_desc`, `name_asc`, `name_desc`, `attack_asc`, `attack_desc`)
-- `refresh=true` (requiere `x-admin-key`)
+- `refresh=true` (requiere `x-admin-key`; no usa sesión por cookie y preserva Pokémon custom)
 
 Respuesta:
 
@@ -91,15 +89,29 @@ Respuesta:
 
 ### `POST /api/pokemons`
 
-- Requiere header `x-admin-key: <ADMIN_API_KEY>`
+- Requiere una sesión admin válida por cookie `httpOnly` o header `x-admin-key: <ADMIN_API_KEY>`
 - Valida payload server-side
 - Códigos: `201`, `400`, `401`, `409`, `500`
 
 ### `DELETE /api/pokemons?id=<pokemonId>`
 
-- Requiere header `x-admin-key: <ADMIN_API_KEY>`
+- Requiere una sesión admin válida por cookie `httpOnly` o header `x-admin-key: <ADMIN_API_KEY>`
 - Solo elimina Pokémon custom
 - Códigos: `200`, `400`, `401`, `403`, `404`, `500`
+
+### `GET /api/admin/session`
+
+- Devuelve el estado de la sesión admin actual
+
+### `POST /api/admin/session`
+
+- Recibe `{ "apiKey": "<ADMIN_API_KEY>" }`
+- Si es válida, crea una sesión admin en cookie `httpOnly`
+- Códigos: `200`, `400`, `401`, `429`
+
+### `DELETE /api/admin/session`
+
+- Cierra la sesión admin actual
 
 ### `GET /api/pokemons/[id]`
 
@@ -112,6 +124,50 @@ Respuesta:
 ### `GET /api/health`
 
 - Códigos: `200` (ok), `503` (degraded)
+
+### `GET /api/favorites`
+
+- Requiere sesión de usuario válida de Supabase Auth
+- Soporta `?idsOnly=true` para devolver solo IDs
+- Respuesta:
+
+```json
+{
+  "favoriteIds": [25, 6],
+  "favorites": []
+}
+```
+
+### `POST /api/favorites`
+
+- Requiere sesión de usuario válida
+- Recibe `{ "pokemonId": 25 }`
+- Códigos: `201`, `400`, `401`, `404`, `500`
+
+### `GET /api/favorites/[pokemonId]`
+
+- Requiere sesión de usuario válida
+- Devuelve `{ "isFavorite": true }`
+
+### `DELETE /api/favorites/[pokemonId]`
+
+- Requiere sesión de usuario válida
+- Elimina ese Pokémon de favoritos para el usuario autenticado
+
+## Auth y favoritos
+
+Rutas nuevas:
+
+- `/login`
+- `/register`
+- `/favorites`
+
+Notas:
+
+- El registro usa Supabase Auth.
+- Si tu proyecto tiene confirmación por email habilitada, el usuario deberá confirmar antes de iniciar sesión.
+- Si la confirmación está deshabilitada en Supabase Auth, el login queda activo inmediatamente después del registro.
+- Los favoritos se guardan por usuario en `public.favorites`.
 
 ## Supabase Keepalive
 
@@ -160,9 +216,23 @@ En tu repo: `Settings > Secrets and variables > Actions`, crea:
 
 ### Seguridad
 
+- `supabase-schema.sql` habilita RLS en `public.pokemons` y `public.types`.
+- `supabase-schema.sql` también deja `public.profiles` y `public.favorites` listas para autenticación de usuarios con políticas por dueño.
+- `public.pokemons` queda bloqueada para acceso directo desde la Data API (`anon` y `authenticated`).
+- `public.types` queda en solo lectura para `anon` y `authenticated`, únicamente para soportar lectura pública segura y el keepalive.
+- El backend sigue funcionando porque `SUPABASE_SERVICE_ROLE_KEY` se usa solo server-side y bypassa RLS.
+- Para evitar nuevas alertas de `RLS Disabled in Public`, el script instala un event trigger que auto-habilita RLS en nuevas tablas creadas en `public`.
 - El workflow **no** usa `SUPABASE_SERVICE_ROLE_KEY`.
 - Las claves se leen solo desde secretos de GitHub Actions.
 - Se enmascaran valores sensibles en logs.
+
+### Verificar Alertas de Supabase
+
+Después de ejecutar `supabase-schema.sql`:
+
+1. Ve a `Database > Security Advisor`.
+2. Pulsa `Refresh`.
+3. Confirma que desaparece `RLS Disabled in Public` para `public.pokemons` y `public.types`.
 
 ### Referencias
 

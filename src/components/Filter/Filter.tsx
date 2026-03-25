@@ -1,6 +1,6 @@
 "use client";
 
-import { FaChevronDown, FaTimes } from "react-icons/fa";
+import { FaChevronDown, FaUndo } from "react-icons/fa";
 
 interface FilterProps {
   onTypeFilter: (type: string) => void;
@@ -46,11 +46,14 @@ const Filter = ({ onTypeFilter, selectedType }: FilterProps) => {
         </div>
 
         <button
+          type="button"
           onClick={clearFilters}
-          className="py-2 px-4 rounded-full bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white transition-colors flex items-center gap-2"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm text-white transition-colors hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white/20"
+          title="Clear type filter"
+          aria-label="Clear type filter"
+          disabled={selectedType === "all"}
         >
-          <span>Clear Filters</span>
-          <FaTimes />
+          <FaUndo />
         </button>
       </div>
     </div>

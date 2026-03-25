@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Navbar from "@/components/Navbar/Navbar";
+import CompareButton from "@/components/Compare/CompareButton";
+import FavoriteButton from "@/components/FavoriteButton/FavoriteButton";
 import Spinner from "@/components/Spinner/Spinner";
 import { background } from "@/assets/backgroundColorByType";
 import wallpaperImg from "@/images/wallpaper.jpg";
@@ -24,12 +26,42 @@ interface Pokemon {
   type: string[];
 }
 
-export default function DetailPage() {
+const DetailPageFallback = () => (
+  <div
+    className="min-h-screen bg-cover bg-center bg-no-repeat relative"
+    style={{ backgroundImage: `url(${wallpaperImg.src})` }}
+  >
+    <div className="absolute inset-0 bg-black/40"></div>
+    <Navbar />
+    <div className="pt-20 flex justify-center items-center h-screen relative z-10">
+      <Spinner />
+    </div>
+  </div>
+);
+
+function DetailPageContent() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [pokemon, setPokemon] = useState<Pokemon | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const returnTo = searchParams.get("from");
+
+  const handleGoBack = () => {
+    if (returnTo && returnTo.startsWith("/")) {
+      router.push(returnTo);
+      return;
+    }
+
+    if (window.history.length > 1) {
+      router.back();
+      return;
+    }
+
+    router.push("/home");
+  };
 
   useEffect(() => {
     const fetchPokemon = async () => {
@@ -79,7 +111,8 @@ export default function DetailPage() {
               <h1 className="text-3xl font-bold text-white mb-4">Pokemon Not Found</h1>
               <p className="text-white mb-6">The Pokemon you&apos;re looking for doesn&apos;t exist.</p>
               <button
-                onClick={() => router.back()}
+                type="button"
+                onClick={handleGoBack}
                 className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors"
               >
                 <FaArrowLeft />
@@ -144,6 +177,19 @@ export default function DetailPage() {
                         );
                       })}
                     </div>
+
+                    <div className="flex gap-3">
+                      <FavoriteButton pokemonId={pokemon.pokemonId} size="md" />
+                      <CompareButton
+                        size="md"
+                        pokemon={{
+                          pokemonId: pokemon.pokemonId,
+                          name: pokemon.name,
+                          image: pokemon.image,
+                          type: pokemon.type,
+                        }}
+                      />
+                    </div>
                   </div>
 
                   {/* Stats */}
@@ -200,7 +246,8 @@ export default function DetailPage() {
           {/* Back Button - Centered below detail card */}
           <div className="mt-8 text-center">
             <button
-              onClick={() => router.back()}
+              type="button"
+              onClick={handleGoBack}
               className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm text-white px-6 py-3 rounded-lg hover:bg-white/30 transition-colors"
             >
               <FaArrowLeft />
@@ -210,5 +257,13 @@ export default function DetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function DetailPage() {
+  return (
+    <Suspense fallback={<DetailPageFallback />}>
+      <DetailPageContent />
+    </Suspense>
   );
 }
