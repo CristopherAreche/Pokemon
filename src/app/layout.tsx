@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/Auth/AuthProvider";
 import { AdminSessionProvider } from "@/components/AdminSession/AdminSessionProvider";
 import { CompareProvider } from "@/components/Compare/CompareProvider";
+import { FavoritesProvider } from "@/components/Favorites/FavoritesProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,9 +33,11 @@ export default function RootLayout({
         suppressHydrationWarning={true}
       >
         <AuthProvider>
-          <CompareProvider>
-            <AdminSessionProvider>{children}</AdminSessionProvider>
-          </CompareProvider>
+          <FavoritesProvider>
+            <CompareProvider>
+              <AdminSessionProvider>{children}</AdminSessionProvider>
+            </CompareProvider>
+          </FavoritesProvider>
         </AuthProvider>
       </body>
     </html>

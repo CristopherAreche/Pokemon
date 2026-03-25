@@ -2,9 +2,10 @@
 
 import axios from "axios";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { FaHeart, FaRegHeart, FaSpinner } from "react-icons/fa";
 import { useAuth } from "@/components/Auth/AuthProvider";
+import { useFavorites } from "@/components/Favorites/FavoritesProvider";
 
 interface FavoriteButtonProps {
   pokemonId: number;
@@ -25,53 +26,14 @@ const FavoriteButton = ({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
-  const [isFavorite, setIsFavorite] = useState(Boolean(initialIsFavorite));
-  const [isCheckingFavorite, setIsCheckingFavorite] = useState(false);
+  const {
+    isFavorite: hasFavorite,
+    isLoading: isFavoritesLoading,
+    setFavoriteState,
+  } = useFavorites();
   const [isUpdating, setIsUpdating] = useState(false);
-
-  useEffect(() => {
-    if (typeof initialIsFavorite === "boolean") {
-      setIsFavorite(initialIsFavorite);
-    }
-  }, [initialIsFavorite]);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setIsFavorite(false);
-      return;
-    }
-
-    if (typeof initialIsFavorite === "boolean") {
-      return;
-    }
-
-    let ignore = false;
-
-    const fetchFavoriteStatus = async () => {
-      try {
-        setIsCheckingFavorite(true);
-        const response = await axios.get<{ isFavorite: boolean }>(`/api/favorites/${pokemonId}`);
-
-        if (!ignore) {
-          setIsFavorite(Boolean(response.data.isFavorite));
-        }
-      } catch {
-        if (!ignore) {
-          setIsFavorite(false);
-        }
-      } finally {
-        if (!ignore) {
-          setIsCheckingFavorite(false);
-        }
-      }
-    };
-
-    void fetchFavoriteStatus();
-
-    return () => {
-      ignore = true;
-    };
-  }, [initialIsFavorite, isAuthenticated, pokemonId]);
+  const isFavorite =
+    hasFavorite(pokemonId) || (isAuthenticated && isFavoritesLoading && Boolean(initialIsFavorite));
 
   const handleClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -90,11 +52,11 @@ const FavoriteButton = ({
 
       if (isFavorite) {
         await axios.delete(`/api/favorites/${pokemonId}`);
-        setIsFavorite(false);
+        setFavoriteState(pokemonId, false);
         onToggle?.(false);
       } else {
         await axios.post("/api/favorites", { pokemonId });
-        setIsFavorite(true);
+        setFavoriteState(pokemonId, true);
         onToggle?.(true);
       }
     } catch (error) {
@@ -110,7 +72,7 @@ const FavoriteButton = ({
   };
 
   const buttonSize = size === "md" ? "h-12 w-12 text-lg" : "h-9 w-9 text-sm";
-  const showSpinner = isUpdating || (isAuthenticated && isCheckingFavorite) || isAuthLoading;
+  const showSpinner = isUpdating || isAuthLoading || (isAuthenticated && isFavoritesLoading);
 
   return (
     <button

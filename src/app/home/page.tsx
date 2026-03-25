@@ -4,7 +4,6 @@ import { Suspense } from "react";
 import axios from "axios";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/components/Auth/AuthProvider";
 import Navbar from "@/components/Navbar/Navbar";
 import Card from "@/components/Card/Card";
 import SearchBar from "@/components/SearchBar/SearchBar";
@@ -12,6 +11,7 @@ import Filter from "@/components/Filter/Filter";
 import Pagination from "@/components/Pagination/Pagination";
 import Spinner from "@/components/Spinner/Spinner";
 import { useAdminSession } from "@/components/AdminSession/AdminSessionProvider";
+import { useFavorites } from "@/components/Favorites/FavoritesProvider";
 import wallpaperImg from "@/images/wallpaper.jpg";
 
 interface Pokemon {
@@ -63,8 +63,8 @@ const HomePageFallback = () => (
 );
 
 function HomePageContent() {
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const { isAdmin, isCheckingSession } = useAdminSession();
+  const { favoriteIds } = useFavorites();
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -80,9 +80,7 @@ function HomePageContent() {
   const [selectedType, setSelectedType] = useState(
     () => searchParams.get("type")?.trim() || DEFAULT_TYPE
   );
-  const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
   const latestRequestRef = useRef(0);
-  const latestFavoritesRequestRef = useRef(0);
   const hasLoadedOnceRef = useRef(false);
   const pokemonsPerPage = 18;
 
@@ -186,49 +184,6 @@ function HomePageContent() {
     fetchPokemons();
   }, [fetchPokemons]);
 
-  const fetchFavoriteIds = useCallback(async () => {
-    if (!isAuthenticated) {
-      setFavoriteIds([]);
-      return;
-    }
-
-    const requestId = latestFavoritesRequestRef.current + 1;
-    latestFavoritesRequestRef.current = requestId;
-
-    try {
-      const response = await axios.get<{ favoriteIds: number[] }>("/api/favorites", {
-        params: {
-          idsOnly: true,
-        },
-      });
-
-      if (requestId !== latestFavoritesRequestRef.current) {
-        return;
-      }
-
-      setFavoriteIds(response.data.favoriteIds ?? []);
-    } catch (error) {
-      if (requestId !== latestFavoritesRequestRef.current) {
-        return;
-      }
-
-      if (axios.isAxiosError(error) && error.response?.status === 401) {
-        setFavoriteIds([]);
-        return;
-      }
-
-      console.error("Error fetching favorite ids:", error);
-    }
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    if (isAuthLoading) {
-      return;
-    }
-
-    void fetchFavoriteIds();
-  }, [fetchFavoriteIds, isAuthLoading]);
-
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -247,20 +202,6 @@ function HomePageContent() {
   const handlePokemonDelete = useCallback(() => {
     fetchPokemons();
   }, [fetchPokemons]);
-
-  const handleFavoriteToggle = useCallback((pokemonId: number, nextIsFavorite: boolean) => {
-    setFavoriteIds((currentFavoriteIds) => {
-      const nextFavoriteIds = new Set(currentFavoriteIds);
-
-      if (nextIsFavorite) {
-        nextFavoriteIds.add(pokemonId);
-      } else {
-        nextFavoriteIds.delete(pokemonId);
-      }
-
-      return [...nextFavoriteIds];
-    });
-  }, []);
 
   if (loading) {
     return (
@@ -351,7 +292,6 @@ function HomePageContent() {
                           : "#"
                       }
                       onDelete={handlePokemonDelete}
-                      onFavoriteToggle={handleFavoriteToggle}
                     />
                     );
                   })}

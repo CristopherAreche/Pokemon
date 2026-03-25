@@ -107,20 +107,8 @@ const Card = ({
         className="block text-black no-underline"
       >
         <div className="w-52 h-80 rounded-xl bg-white shadow-md shadow-gray-900 hover:scale-105 transition-transform duration-200 mx-auto relative">
-          {/* Delete button for custom Pokemon */}
-          {isCustomPokemon && (
-            <button
-              type="button"
-              onClick={handleDelete}
-              className="absolute top-2 right-2 z-10 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-colors"
-              title="Delete Pokemon"
-            >
-              <FaTimes className="text-sm" />
-            </button>
-          )}
-
           {pokemonId && (
-            <div className="absolute left-2 top-2 z-10 flex items-center gap-2">
+            <div className="absolute inset-x-2 top-2 z-10 flex items-start justify-between">
               <FavoriteButton
                 pokemonId={pokemonId}
                 initialIsFavorite={isFavorite}
@@ -128,14 +116,28 @@ const Card = ({
                   onFavoriteToggle?.(pokemonId, nextIsFavorite);
                 }}
               />
-              <CompareButton
-                pokemon={{
-                  pokemonId,
-                  name,
-                  image,
-                  type,
-                }}
-              />
+
+              <div className="flex flex-col items-end gap-2">
+                <CompareButton
+                  pokemon={{
+                    pokemonId,
+                    name,
+                    image,
+                    type,
+                  }}
+                />
+
+                {isCustomPokemon && (
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-white transition-colors hover:bg-red-600"
+                    title="Delete Pokemon"
+                  >
+                    <FaTimes className="text-sm" />
+                  </button>
+                )}
+              </div>
             </div>
           )}
           
